@@ -395,7 +395,76 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun registerPeer(socket: BluetoothSocket) {
+    
+private fun registerPeer(socket: BluetoothSocket) {
+    val address = socket.remoteDevice.address
+
+    val name = try {
+        socket.remoteDevice.name ?: "جهاز"
+    } catch (_: Exception) {
+        "جهاز"
+    }
+
+    closePeer(address, false)
+
+    try {
+        val writer = PrintWriter(
+            OutputStreamWriter(
+                socket.outputStream,
+                Charsets.UTF_8
+            ),
+            true
+        )
+
+        sockets[address] = socket
+        writers[address] = writer
+
+        emit("connected", address, name)
+
+        pool.execute {
+            try {
+                val reader = BufferedReader(
+                    InputStreamReader(
+                        socket.inputStream,
+                        Charsets.UTF_8
+                    )
+                )
+
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    emit("message", address, name, line)
+                }
+            } catch (e: Exception) {
+                emit(
+                    "connectionError",
+                    address,
+                    message = e.message ?: "انقطع الاتصال"
+                )
+            } finally {
+                if (sockets[address] === socket) {
+                    closePeer(address)
+                } else {
+                    try {
+                        socket.close()
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        try {
+            socket.close()
+        } catch (_: Exception) {
+        }
+
+        emit(
+            "connectionError",
+            address,
+            message = e.message ?: "تعذر إعداد الاتصال"
+        )
+    }
+}
+
         val address = socket.remoteDevice.address
 
         val name = try {

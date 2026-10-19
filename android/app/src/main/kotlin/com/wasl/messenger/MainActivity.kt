@@ -1,3 +1,4 @@
+
 package com.wasl.messenger
 
 import android.Manifest
@@ -78,13 +79,9 @@ class MainActivity : FlutterActivity() {
             engine.dartExecutor.binaryMessenger,
             METHODS
         ).setMethodCallHandler { call, result ->
-
             try {
                 when (call.method) {
-
-                    "isSupported" -> {
-                        result.success(adapter != null)
-                    }
+                    "isSupported" -> result.success(adapter != null)
 
                     "isEnabled" -> {
                         if (!hasConnectPermission()) {
@@ -123,14 +120,14 @@ class MainActivity : FlutterActivity() {
                                 null
                             )
                         } else {
-                            val list = adapter?.bondedDevices?.map {
+                            val devices = adapter?.bondedDevices?.map {
                                 mapOf(
                                     "name" to (it.name ?: "جهاز"),
                                     "address" to it.address
                                 )
                             } ?: emptyList<Map<String, String>>()
 
-                            result.success(list)
+                            result.success(devices)
                         }
                     }
 
@@ -234,9 +231,7 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
 
-                    else -> {
-                        result.notImplemented()
-                    }
+                    else -> result.notImplemented()
                 }
             } catch (e: SecurityException) {
                 result.error(
@@ -268,9 +263,7 @@ class MainActivity : FlutterActivity() {
         name: String? = null,
         message: String? = null
     ) {
-        val event = mutableMapOf<String, Any>(
-            "type" to type
-        )
+        val event = mutableMapOf<String, Any>("type" to type)
 
         address?.let { event["address"] = it }
         name?.let { event["name"] = it }
@@ -314,13 +307,13 @@ class MainActivity : FlutterActivity() {
 
         pool.execute {
             try {
-                val socket =
+                val listeningSocket =
                     bluetooth.listenUsingRfcommWithServiceRecord(
                         SERVICE_NAME,
                         UUID_WASL
                     )
 
-                server = socket
+                server = listeningSocket
 
                 handler.post {
                     result.success(true)
@@ -329,7 +322,7 @@ class MainActivity : FlutterActivity() {
                 emit("serverStarted")
 
                 while (running.get()) {
-                    val client = socket.accept()
+                    val client = listeningSocket.accept()
 
                     pool.execute {
                         registerPeer(client)
@@ -374,7 +367,6 @@ class MainActivity : FlutterActivity() {
                     device.createRfcommSocketToServiceRecord(UUID_WASL)
 
                 socket.connect()
-
                 registerPeer(socket)
 
                 handler.post {
@@ -437,8 +429,8 @@ class MainActivity : FlutterActivity() {
                         )
                     )
 
-                    // إصلاح الخطأ: لا تستخدم socket.isClosed هنا.
-                    // تنتهي الحلقة عند انقطاع الاتصال أو انتهاء تدفق البيانات.
+                    // لا نستخدم isClosed في شرط الحلقة.
+                    // readLine ترجع null عند انتهاء تدفق البيانات.
                     while (true) {
                         val line = reader.readLine() ?: break
                         emit("message", address, name, line)
@@ -452,7 +444,16 @@ class MainActivity : FlutterActivity() {
                         )
                     }
                 } finally {
-                    closePeer(address)
+                    // لا تغلق اتصالاً جديداً لنفس الجهاز
+                    // إذا كان هذا الاتصال القديم قد انتهى.
+                    if (sockets[address] === socket) {
+                        closePeer(address)
+                    } else {
+                        try {
+                            socket.close()
+                        } catch (_: Exception) {
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {

@@ -436,14 +436,12 @@ class MainActivity : FlutterActivity() {
                         emit("message", address, name, line)
                     }
                 } catch (e: Exception) {
-                    if (!socket.isClosed) {
-                        emit(
-                            "connectionError",
-                            address,
-                            message = e.message ?: "انقطع الاتصال"
-                        )
-                    }
-                } finally {
+    emit(
+        "connectionError",
+        address,
+        message = e.message ?: "انقطع الاتصال"
+    )
+} finally { 
                     // لا تغلق اتصالاً جديداً لنفس الجهاز
                     // إذا كان هذا الاتصال القديم قد انتهى.
                     if (sockets[address] === socket) {

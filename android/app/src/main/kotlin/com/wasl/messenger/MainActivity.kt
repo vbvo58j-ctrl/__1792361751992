@@ -1,4 +1,3 @@
-
 package com.wasl.messenger
 
 import android.Manifest
@@ -10,14 +9,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import androidx.core.content.ContextCompat
+import androidx.core.app.ActivityCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.io.PrintWriter
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -25,467 +23,127 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : FlutterActivity() {
-
     companion object {
-        private const val METHODS = "com.wasl.messenger/bluetooth"
+        private const val METHOD = "com.wasl.messenger/bluetooth"
         private const val EVENTS = "com.wasl.messenger/events"
         private const val SERVICE_NAME = "BlosabRFCOMM"
-
-        private val SERVICE_UUID = UUID.fromString(
-            "f0e1d2c3-b4a5-4678-9012-123456789abc"
-        )
+        private val UUID_SERVICE: UUID = UUID.fromString("f0e1d2c3-b4a5-4678-9012-123456789abc")
     }
-
     private val pool = Executors.newCachedThreadPool()
     private val handler = Handler(Looper.getMainLooper())
-    private val running = AtomicBoolean(false)
-
     private val sockets = ConcurrentHashMap<String, BluetoothSocket>()
     private val writers = ConcurrentHashMap<String, PrintWriter>()
-
-    @Volatile
-    private var sink: EventChannel.EventSink? = null
-
-    @Volatile
+    private val running = AtomicBoolean(false)
     private var server: BluetoothServerSocket? = null
+    private var sink: EventChannel.EventSink? = null
+    private val adapter: BluetoothAdapter? get() = BluetoothAdapter.getDefaultAdapter()
 
-    private val adapter: BluetoothAdapter?
-        get() = BluetoothAdapter.getDefaultAdapter()
-
-    override fun configureFlutterEngine(engine: FlutterEngine) {
-        super.configureFlutterEngine(engine)
-
-        EventChannel(
-            engine.dartExecutor.binaryMessenger,
-            EVENTS
-        ).setStreamHandler(object : EventChannel.StreamHandler {
-            override fun onListen(
-                arguments: Any?,
-                events: EventChannel.EventSink?
-            ) {
-                sink = events
-            }
-
-            override fun onCancel(arguments: Any?) {
-                sink = null
-            }
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENTS).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { sink = events }
+            override fun onCancel(arguments: Any?) { sink = null }
         })
-
-        MethodChannel(
-            engine.dartExecutor.binaryMessenger,
-            METHODS
-        ).setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
                     "isSupported" -> result.success(adapter != null)
-
-                    "isEnabled" -> {
-                        if (!hasConnectPermission()) {
-                            result.error(
-                                "PERMISSION",
-                                "يرجى السماح باستخدام البلوتوث",
-                                null
-                            )
-                        } else {
-                            result.success(adapter?.isEnabled == true)
-                        }
-                    }
-
-                    "requestEnable" -> {
-                        if (!hasConnectPermission()) {
-                            result.error(
-                                "PERMISSION",
-                                "يرجى السماح باستخدام البلوتوث",
-                                null
-                            )
-                        } else {
-                            @Suppress("DEPRECATION")
-                            startActivity(
-                                Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                            )
-                            result.success(true)
-                        }
-                    }
-
+                    "isEnabled" -> { if (!hasConnectPermission()) result.error("PERMISSION_DENIED", "Bluetooth permission required", null) else result.success(adapter?.isEnabled == true) }
+                    "requestEnable" -> { if (!hasConnectPermission()) result.error("PERMISSION_DENIED", "Bluetooth permission required", null) else { startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)); result.success(true) } }
                     "getPairedDevices" -> {
-                        if (!hasConnectPermission()) {
-                            result.error(
-                                "PERMISSION",
-                                "يرجى السماح باستخدام البلوتوث",
-                                null
-                            )
-                        } else {
-                            val devices = adapter?.bondedDevices?.map {
-                                mapOf(
-                                    "name" to (it.name ?: "جهاز"),
-                                    "address" to it.address
-                                )
-                            } ?: emptyList<Map<String, String>>()
-
-                            result.success(devices)
-                        }
+                        if (!hasConnectPermission()) { result.error("PERMISSION_DENIED", "Bluetooth permission required", null); return@setMethodCallHandler }
+                        result.success(adapter?.bondedDevices?.map { mapOf("name" to (it.name ?: "جهاز"), "address" to it.address) } ?: emptyList<Map<String, String>>())
                     }
-
-                    "startServer" -> {
-                        if (!hasConnectPermission()) {
-                            result.error(
-                                "PERMISSION",
-                                "يرجى السماح باستخدام البلوتوث",
-                                null
-                            )
-                        } else {
-                            startServer(result)
-                        }
-                    }
-
-                    "connect" -> {
-                        if (!hasConnectPermission()) {
-                            result.error(
-                                "PERMISSION",
-                                "يرجى السماح باستخدام البلوتوث",
-                                null
-                            )
-                        } else {
-                            val address = call.argument<String>("address")
-
-                            if (address.isNullOrBlank()) {
-                                result.error(
-                                    "ADDRESS",
-                                    "عنوان الجهاز غير صالح",
-                                    null
-                                )
-                            } else {
-                                connect(address, result)
-                            }
-                        }
-                    }
-
+                    "startServer" -> { if (!hasConnectPermission()) result.error("PERMISSION_DENIED", "Bluetooth permission required", null) else { startServer(result) } }
+                    "connect" -> { if (!hasConnectPermission()) result.error("PERMISSION_DENIED", "Bluetooth permission required", null) else connect(call.argument<String>("address") ?: "", result) }
                     "sendMessage" -> {
-                        val address = call.argument<String>("address")
-                        val message = call.argument<String>("message")
-
-                        if (address.isNullOrBlank() || message == null) {
-                            result.error(
-                                "ARGUMENT",
-                                "بيانات الرسالة غير مكتملة",
-                                null
-                            )
-                        } else {
-                            pool.execute {
-                                try {
-                                    val writer = writers[address]
-                                        ?: throw IllegalStateException(
-                                            "الجهاز غير متصل"
-                                        )
-
-                                    synchronized(writer) {
-                                        writer.println(message)
-                                        writer.flush()
-
-                                        if (writer.checkError()) {
-                                            throw java.io.IOException(
-                                                "فشل إرسال الرسالة"
-                                            )
-                                        }
-                                    }
-
-                                    handler.post {
-                                        result.success(true)
-                                    }
-                                } catch (e: Exception) {
-                                    handler.post {
-                                        result.error(
-                                            "SEND_FAILED",
-                                            e.message ?: "تعذر إرسال الرسالة",
-                                            null
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        val address = call.argument<String>("address") ?: ""
+                        val message = call.argument<String>("message") ?: ""
+                        val writer = writers[address]
+                        if (writer == null) result.success(false) else { writer.println(message); result.success(!writer.checkError()) }
                     }
-
-                    "disconnect" -> {
-                        val address = call.argument<String>("address")
-
-                        if (address.isNullOrBlank()) {
-                            closeAll()
-                        } else {
-                            closePeer(address)
-                        }
-
-                        result.success(true)
-                    }
-
-                    "stopServer" -> {
-                        stopServer()
-                        result.success(true)
-                    }
-
+                    "disconnect" -> { val address = call.argument<String>("address"); if (address == null) closeAll() else closePeer(address); result.success(true) }
+                    "stopServer" -> { stopServer(); result.success(true) }
                     else -> result.notImplemented()
                 }
-            } catch (_: SecurityException) {
-                result.error(
-                    "PERMISSION",
-                    "يرجى السماح للتطبيق باستخدام البلوتوث من إعدادات الهاتف",
-                    null
-                )
-            } catch (e: Exception) {
-                result.error(
-                    "NATIVE_ERROR",
-                    e.message ?: "تعذر تنفيذ عملية البلوتوث",
-                    null
-                )
-            }
+            } catch (e: SecurityException) { result.error("PERMISSION_DENIED", e.message, null) }
+              catch (e: Exception) { result.error("BLUETOOTH_ERROR", e.message, null) }
         }
     }
 
-    private fun hasConnectPermission(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED
-    }
+    private fun hasConnectPermission(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
-    private fun emit(
-        type: String,
-        address: String? = null,
-        name: String? = null,
-        message: String? = null
-    ) {
-        val event = mutableMapOf<String, Any>("type" to type)
-
-        address?.let { event["address"] = it }
-        name?.let { event["name"] = it }
-        message?.let { event["message"] = it }
-
-        handler.post {
-            sink?.success(event)
-        }
+    private fun emit(type: String, address: String? = null, name: String? = null, message: String? = null) {
+        val data = mutableMapOf<String, Any>("type" to type)
+        if (address != null) data["address"] = address
+        if (name != null) data["name"] = name
+        if (message != null) data["message"] = message
+        handler.post { sink?.success(data) }
     }
 
     private fun startServer(result: MethodChannel.Result) {
-        val bluetooth = adapter
-
-        if (bluetooth == null) {
-            result.error("UNSUPPORTED", "هذا الهاتف لا يدعم البلوتوث", null)
-            return
-        }
-
-        if (!hasConnectPermission()) {
-            result.error("PERMISSION", "صلاحية البلوتوث غير متاحة", null)
-            return
-        }
-
-        if (!bluetooth.isEnabled) {
-            result.error("BLUETOOTH_OFF", "شغّل البلوتوث أولاً", null)
-            return
-        }
-
-        if (!running.compareAndSet(false, true)) {
-            result.success(true)
-            return
-        }
-
+        if (adapter == null) { result.error("UNSUPPORTED", "Bluetooth unavailable", null); return }
+        if (!running.compareAndSet(false, true)) { result.success(true); return }
         pool.execute {
             try {
-                val listeningSocket =
-                    bluetooth.listenUsingRfcommWithServiceRecord(
-                        SERVICE_NAME,
-                        SERVICE_UUID
-                    )
-
-                server = listeningSocket
-
-                handler.post {
-                    result.success(true)
-                }
-
-                emit("serverStarted")
-
+                server = adapter?.listenUsingRfcommWithServiceRecord(SERVICE_NAME, UUID_SERVICE)
+                handler.post { result.success(true) }
                 while (running.get()) {
-                    val client = listeningSocket.accept()
-                    pool.execute {
-                        registerPeer(client)
-                    }
+                    val socket = server?.accept() ?: break
+                    registerPeer(socket)
                 }
             } catch (e: Exception) {
-                if (running.get()) {
-                    emit(
-                        "serverError",
-                        message = "تعذر تشغيل استقبال اتصالات البلوتوث"
-                    )
-                }
-
-                handler.post {
-                    if (running.get()) {
-                        running.set(false)
-                    }
-                }
-            } finally {
+                handler.post { emit("error", message = e.message ?: "تعذر تشغيل خادم البلوتوث") }
                 running.set(false)
-
-                try {
-                    server?.close()
-                } catch (_: Exception) {
-                }
-
-                server = null
             }
         }
     }
 
-    private fun connect(
-        address: String,
-        result: MethodChannel.Result
-    ) {
+    private fun connect(address: String, result: MethodChannel.Result) {
         pool.execute {
-            var socket: BluetoothSocket? = null
-
             try {
-                val device = adapter?.getRemoteDevice(address)
-                    ?: throw IllegalStateException("البلوتوث غير متاح")
-
+                val device = adapter?.getRemoteDevice(address) ?: throw Exception("جهاز غير معروف")
+                val socket = device.createRfcommSocketToServiceRecord(UUID_SERVICE)
                 adapter?.cancelDiscovery()
-
-                socket = device.createRfcommSocketToServiceRecord(
-                    SERVICE_UUID
-                )
-
                 socket.connect()
                 registerPeer(socket)
-
-                handler.post {
-                    result.success(true)
-                }
-            } catch (e: Exception) {
-                try {
-                    socket?.close()
-                } catch (_: Exception) {
-                }
-
-                emit(
-                    "connectionError",
-                    address = address,
-                    message = "تعذر الاتصال بالجهاز"
-                )
-
-                handler.post {
-                    result.error(
-                        "CONNECT_FAILED",
-                        "تعذر الاتصال. تأكد من اقتران الهاتفين وتشغيل البلوتوث.",
-                        null
-                    )
-                }
-            }
+                handler.post { result.success(true) }
+            } catch (e: Exception) { handler.post { result.error("CONNECT_FAILED", e.message, null) } }
         }
     }
 
     private fun registerPeer(socket: BluetoothSocket) {
         val address = socket.remoteDevice.address
-
-        val name = try {
-            socket.remoteDevice.name ?: "جهاز"
-        } catch (_: Exception) {
-            "جهاز"
-        }
-
-        closePeer(address, false)
-
-        try {
-            val writer = PrintWriter(
-                OutputStreamWriter(socket.outputStream, Charsets.UTF_8),
-                true
-            )
-
-            sockets[address] = socket
-            writers[address] = writer
-
-            emit("connected", address, name)
-
-            pool.execute {
-                try {
-                    val reader = BufferedReader(
-                        InputStreamReader(
-                            socket.inputStream,
-                            Charsets.UTF_8
-                        )
-                    )
-
-                    while (true) {
-                        val line = reader.readLine() ?: break
-                        emit("message", address, name, line)
-                    }
-                } catch (_: Exception) {
-                    emit(
-                        "connectionError",
-                        address = address,
-                        message = "انقطع الاتصال بالجهاز"
-                    )
-                } finally {
-                    if (sockets[address] === socket) {
-                        closePeer(address)
-                    } else {
-                        try {
-                            socket.close()
-                        } catch (_: Exception) {
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) {
+        sockets[address]?.close()
+        sockets[address] = socket
+        writers[address] = PrintWriter(socket.outputStream, true, Charsets.UTF_8)
+        emit("connected", address, socket.remoteDevice.name ?: "جهاز")
+        pool.execute {
             try {
-                socket.close()
+                val reader = BufferedReader(InputStreamReader(socket.inputStream, Charsets.UTF_8))
+                while (running.get() || socket.isConnected) {
+                    val line = reader.readLine() ?: break
+                    emit("message", address, socket.remoteDevice.name ?: "جهاز", line)
+                }
             } catch (_: Exception) {
+            } finally {
+                if (sockets[address] === socket) closePeer(address)
             }
-
-            emit(
-                "connectionError",
-                address = address,
-                message = "تعذر إعداد اتصال البلوتوث"
-            )
         }
     }
 
-    private fun closePeer(
-        address: String,
-        notify: Boolean = true
-    ) {
+    private fun closePeer(address: String) {
         writers.remove(address)
-
-        try {
-            sockets.remove(address)?.close()
-        } catch (_: Exception) {
-        }
-
-        if (notify) {
-            emit("disconnected", address)
-        }
+        sockets.remove(address)?.let { try { it.close() } catch (_: Exception) {} }
+        emit("disconnected", address)
     }
-
-    private fun closeAll() {
-        sockets.keys.toList().forEach { address ->
-            closePeer(address)
-        }
-    }
-
+    private fun closeAll() { sockets.keys.toList().forEach { closePeer(it) } }
     private fun stopServer() {
         running.set(false)
-
-        try {
-            server?.close()
-        } catch (_: Exception) {
-        }
-
+        try { server?.close() } catch (_: Exception) {}
         server = null
         closeAll()
-        emit("serverStopped")
     }
-
-    override fun onDestroy() {
-        stopServer()
-        pool.shutdownNow()
-        super.onDestroy()
-    }
+    override fun onDestroy() { stopServer(); pool.shutdownNow(); super.onDestroy() }
 }

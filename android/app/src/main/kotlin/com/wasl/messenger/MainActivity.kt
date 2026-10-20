@@ -26,15 +26,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 class MainActivity : FlutterActivity() {
 
     companion object {
-        private const val METHODS =
-            "com.wasl.messenger/bluetooth"
+        private const val METHODS = "com.wasl.messenger/bluetooth"
+        private const val EVENTS = "com.wasl.messenger/events"
+        private const val SERVICE_NAME = "BlosabRFCOMM"
 
-        private const val EVENTS =
-            "com.wasl.messenger/events"
-
-        private const val SERVICE_NAME = "WaslRFCOMM"
-
-        private val UUID_WASL = UUID.fromString(
+        private val SERVICE_UUID: UUID = UUID.fromString(
             "f0e1d2c3-b4a5-4678-9012-123456789abc"
         )
     }
@@ -43,11 +39,8 @@ class MainActivity : FlutterActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(false)
 
-    private val sockets =
-        ConcurrentHashMap<String, BluetoothSocket>()
-
-    private val writers =
-        ConcurrentHashMap<String, PrintWriter>()
+    private val sockets = ConcurrentHashMap<String, BluetoothSocket>()
+    private val writers = ConcurrentHashMap<String, PrintWriter>()
 
     @Volatile
     private var sink: EventChannel.EventSink? = null
@@ -82,10 +75,8 @@ class MainActivity : FlutterActivity() {
             engine.dartExecutor.binaryMessenger,
             METHODS
         ).setMethodCallHandler { call, result ->
-
             try {
                 when (call.method) {
-
                     "isSupported" -> {
                         result.success(adapter != null)
                     }
@@ -98,9 +89,7 @@ class MainActivity : FlutterActivity() {
                                 null
                             )
                         } else {
-                            result.success(
-                                adapter?.isEnabled == true
-                            )
+                            result.success(adapter?.isEnabled == true)
                         }
                     }
 
@@ -112,10 +101,9 @@ class MainActivity : FlutterActivity() {
                                 null
                             )
                         } else {
+                            @Suppress("DEPRECATION")
                             startActivity(
-                                Intent(
-                                    BluetoothAdapter.ACTION_REQUEST_ENABLE
-                                )
+                                Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
                             )
                             result.success(true)
                         }
@@ -129,13 +117,12 @@ class MainActivity : FlutterActivity() {
                                 null
                             )
                         } else {
-                            val devices =
-                                adapter?.bondedDevices?.map {
-                                    mapOf(
-                                        "name" to (it.name ?: "جهاز"),
-                                        "address" to it.address
-                                    )
-                                } ?: emptyList<Map<String, String>>()
+                            val devices = adapter?.bondedDevices?.map {
+                                mapOf(
+                                    "name" to (it.name ?: "جهاز"),
+                                    "address" to it.address
+                                )
+                            } ?: emptyList<Map<String, String>>()
 
                             result.success(devices)
                         }
@@ -145,7 +132,7 @@ class MainActivity : FlutterActivity() {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "صلاحية البلوتوث غير متاحة",
+                                "Bluetooth permission required",
                                 null
                             )
                         } else {
@@ -157,12 +144,11 @@ class MainActivity : FlutterActivity() {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "صلاحية البلوتوث غير متاحة",
+                                "Bluetooth permission required",
                                 null
                             )
                         } else {
-                            val address =
-                                call.argument<String>("address")
+                            val address = call.argument<String>("address")
 
                             if (address.isNullOrBlank()) {
                                 result.error(
@@ -177,58 +163,44 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "sendMessage" -> {
-                        if (!hasConnectPermission()) {
+                        val address = call.argument<String>("address")
+                        val message = call.argument<String>("message")
+
+                        if (address.isNullOrBlank() || message == null) {
                             result.error(
-                                "PERMISSION",
-                                "صلاحية البلوتوث غير متاحة",
+                                "ARGUMENT",
+                                "بيانات الرسالة ناقصة",
                                 null
                             )
                         } else {
-                            val address =
-                                call.argument<String>("address")
+                            pool.execute {
+                                try {
+                                    val writer = writers[address]
+                                        ?: throw IllegalStateException(
+                                            "الجهاز غير متصل"
+                                        )
 
-                            val message =
-                                call.argument<String>("message")
+                                    synchronized(writer) {
+                                        writer.println(message)
+                                        writer.flush()
 
-                            if (address.isNullOrBlank() ||
-                                message == null
-                            ) {
-                                result.error(
-                                    "ARGUMENT",
-                                    "بيانات الرسالة ناقصة",
-                                    null
-                                )
-                            } else {
-                                pool.execute {
-                                    try {
-                                        val writer = writers[address]
-                                            ?: throw IllegalStateException(
-                                                "الجهاز غير متصل"
-                                            )
-
-                                        synchronized(writer) {
-                                            writer.println(message)
-                                            writer.flush()
-
-                                            if (writer.checkError()) {
-                                                throw java.io.IOException(
-                                                    "فشل الإرسال"
-                                                )
-                                            }
-                                        }
-
-                                        handler.post {
-                                            result.success(true)
-                                        }
-                                    } catch (e: Exception) {
-                                        handler.post {
-                                            result.error(
-                                                "SEND",
-                                                e.message
-                                                    ?: "فشل إرسال الرسالة",
-                                                null
+                                        if (writer.checkError()) {
+                                            throw java.io.IOException(
+                                                "فشل الإرسال"
                                             )
                                         }
+                                    }
+
+                                    handler.post {
+                                        result.success(true)
+                                    }
+                                } catch (e: Exception) {
+                                    handler.post {
+                                        result.error(
+                                            "SEND_FAILED",
+                                            e.message ?: "فشل إرسال الرسالة",
+                                            null
+                                        )
                                     }
                                 }
                             }
@@ -236,8 +208,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "disconnect" -> {
-                        val address =
-                            call.argument<String>("address")
+                        val address = call.argument<String>("address")
 
                         if (address.isNullOrBlank()) {
                             closeAll()
@@ -253,20 +224,18 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
 
-                    else -> {
-                        result.notImplemented()
-                    }
+                    else -> result.notImplemented()
                 }
             } catch (e: SecurityException) {
                 result.error(
                     "PERMISSION",
-                    e.message ?: "صلاحية البلوتوث غير متاحة",
+                    "يرجى السماح للتطبيق باستخدام البلوتوث",
                     null
                 )
             } catch (e: Exception) {
                 result.error(
                     "NATIVE_ERROR",
-                    e.message ?: "حدث خطأ في البلوتوث",
+                    e.message ?: "تعذر تنفيذ عملية البلوتوث",
                     null
                 )
             }
@@ -287,9 +256,7 @@ class MainActivity : FlutterActivity() {
         name: String? = null,
         message: String? = null
     ) {
-        val event = mutableMapOf<String, Any>(
-            "type" to type
-        )
+        val event = mutableMapOf<String, Any>("type" to type)
 
         address?.let { event["address"] = it }
         name?.let { event["name"] = it }
@@ -300,35 +267,21 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startServer(
-        result: MethodChannel.Result
-    ) {
+    private fun startServer(result: MethodChannel.Result) {
         val bluetooth = adapter
 
         if (bluetooth == null) {
-            result.error(
-                "UNSUPPORTED",
-                "لا يوجد بلوتوث",
-                null
-            )
+            result.error("UNSUPPORTED", "لا يوجد بلوتوث", null)
             return
         }
 
         if (!hasConnectPermission()) {
-            result.error(
-                "PERMISSION",
-                "صلاحية البلوتوث غير متاحة",
-                null
-            )
+            result.error("PERMISSION", "صلاحية البلوتوث غير متاحة", null)
             return
         }
 
         if (!bluetooth.isEnabled) {
-            result.error(
-                "BLUETOOTH_OFF",
-                "شغّل البلوتوث أولاً",
-                null
-            )
+            result.error("BLUETOOTH_OFF", "شغّل البلوتوث أولاً", null)
             return
         }
 
@@ -342,7 +295,7 @@ class MainActivity : FlutterActivity() {
                 val listeningSocket =
                     bluetooth.listenUsingRfcommWithServiceRecord(
                         SERVICE_NAME,
-                        UUID_WASL
+                        SERVICE_UUID
                     )
 
                 server = listeningSocket
@@ -364,12 +317,8 @@ class MainActivity : FlutterActivity() {
                 if (running.get()) {
                     emit(
                         "serverError",
-                        message = e.message ?: "خطأ بالخادم"
+                        message = "تعذر تشغيل استقبال اتصالات البلوتوث"
                     )
-
-                    handler.post {
-                        running.set(false)
-                    }
                 }
             } finally {
                 running.set(false)
@@ -393,16 +342,13 @@ class MainActivity : FlutterActivity() {
 
             try {
                 val device = adapter?.getRemoteDevice(address)
-                    ?: throw IllegalStateException(
-                        "البلوتوث غير متاح"
-                    )
+                    ?: throw IllegalStateException("البلوتوث غير متاح")
 
                 adapter?.cancelDiscovery()
 
-                socket =
-                    device.createRfcommSocketToServiceRecord(
-                        UUID_WASL
-                    )
+                socket = device.createRfcommSocketToServiceRecord(
+                    SERVICE_UUID
+                )
 
                 socket.connect()
                 registerPeer(socket)
@@ -418,14 +364,14 @@ class MainActivity : FlutterActivity() {
 
                 emit(
                     "connectionError",
-                    address,
-                    message = e.message ?: "تعذر الاتصال بالجهاز"
+                    address = address,
+                    message = "تعذر الاتصال بالجهاز"
                 )
 
                 handler.post {
                     result.error(
                         "CONNECT_FAILED",
-                        e.message ?: "تعذر الاتصال بالجهاز",
+                        "تعذر الاتصال بالجهاز. تأكد من الاقتران وتشغيل البلوتوث.",
                         null
                     )
                 }
@@ -446,21 +392,14 @@ class MainActivity : FlutterActivity() {
 
         try {
             val writer = PrintWriter(
-                OutputStreamWriter(
-                    socket.outputStream,
-                    Charsets.UTF_8
-                ),
+                OutputStreamWriter(socket.outputStream, Charsets.UTF_8),
                 true
             )
 
             sockets[address] = socket
             writers[address] = writer
 
-            emit(
-                "connected",
-                address,
-                name
-            )
+            emit("connected", address, name)
 
             pool.execute {
                 try {
@@ -473,22 +412,14 @@ class MainActivity : FlutterActivity() {
 
                     while (true) {
                         val line = reader.readLine() ?: break
-
-                        emit(
-                            "message",
-                            address,
-                            name,
-                            line
-                        )
+                        emit("message", address, name, line)
                     }
-                } catch (e: Exception) {
-                    if (running.get() || sockets[address] === socket) {
-                        emit(
-                            "connectionError",
-                            address,
-                            message = e.message ?: "انقطع الاتصال"
-                        )
-                    }
+                } catch (_: Exception) {
+                    emit(
+                        "connectionError",
+                        address = address,
+                        message = "انقطع الاتصال بالجهاز"
+                    )
                 } finally {
                     if (sockets[address] === socket) {
                         closePeer(address)
@@ -500,7 +431,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             try {
                 socket.close()
             } catch (_: Exception) {
@@ -508,8 +439,8 @@ class MainActivity : FlutterActivity() {
 
             emit(
                 "connectionError",
-                address,
-                message = e.message ?: "تعذر إعداد الاتصال"
+                address = address,
+                message = "تعذر إعداد اتصال البلوتوث"
             )
         }
     }

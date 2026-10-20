@@ -13,10 +13,6 @@
         android:maxSdkVersion="30" />
 
     <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
-
-    <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <uses-permission
@@ -24,8 +20,8 @@
         android:usesPermissionFlags="neverForLocation" />
 
     <application
-        android:name="${applicationName}"
         android:label="بلوساب"
+        android:name="${applicationName}"
         android:icon="@android:drawable/sym_def_app_icon">
 
         <activity
@@ -52,5 +48,4 @@
             android:value="2" />
 
     </application>
-
 </manifest>

@@ -1,3 +1,4 @@
+
 package com.wasl.messenger
 
 import android.Manifest
@@ -30,7 +31,7 @@ class MainActivity : FlutterActivity() {
         private const val EVENTS = "com.wasl.messenger/events"
         private const val SERVICE_NAME = "BlosabRFCOMM"
 
-        private val SERVICE_UUID: UUID = UUID.fromString(
+        private val SERVICE_UUID = UUID.fromString(
             "f0e1d2c3-b4a5-4678-9012-123456789abc"
         )
     }
@@ -58,7 +59,6 @@ class MainActivity : FlutterActivity() {
             engine.dartExecutor.binaryMessenger,
             EVENTS
         ).setStreamHandler(object : EventChannel.StreamHandler {
-
             override fun onListen(
                 arguments: Any?,
                 events: EventChannel.EventSink?
@@ -77,15 +77,13 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
-                    "isSupported" -> {
-                        result.success(adapter != null)
-                    }
+                    "isSupported" -> result.success(adapter != null)
 
                     "isEnabled" -> {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "Bluetooth permission required",
+                                "يرجى السماح باستخدام البلوتوث",
                                 null
                             )
                         } else {
@@ -97,7 +95,7 @@ class MainActivity : FlutterActivity() {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "Bluetooth permission required",
+                                "يرجى السماح باستخدام البلوتوث",
                                 null
                             )
                         } else {
@@ -113,7 +111,7 @@ class MainActivity : FlutterActivity() {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "Bluetooth permission required",
+                                "يرجى السماح باستخدام البلوتوث",
                                 null
                             )
                         } else {
@@ -132,7 +130,7 @@ class MainActivity : FlutterActivity() {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "Bluetooth permission required",
+                                "يرجى السماح باستخدام البلوتوث",
                                 null
                             )
                         } else {
@@ -144,7 +142,7 @@ class MainActivity : FlutterActivity() {
                         if (!hasConnectPermission()) {
                             result.error(
                                 "PERMISSION",
-                                "Bluetooth permission required",
+                                "يرجى السماح باستخدام البلوتوث",
                                 null
                             )
                         } else {
@@ -153,7 +151,7 @@ class MainActivity : FlutterActivity() {
                             if (address.isNullOrBlank()) {
                                 result.error(
                                     "ADDRESS",
-                                    "عنوان الجهاز مطلوب",
+                                    "عنوان الجهاز غير صالح",
                                     null
                                 )
                             } else {
@@ -169,7 +167,7 @@ class MainActivity : FlutterActivity() {
                         if (address.isNullOrBlank() || message == null) {
                             result.error(
                                 "ARGUMENT",
-                                "بيانات الرسالة ناقصة",
+                                "بيانات الرسالة غير مكتملة",
                                 null
                             )
                         } else {
@@ -186,7 +184,7 @@ class MainActivity : FlutterActivity() {
 
                                         if (writer.checkError()) {
                                             throw java.io.IOException(
-                                                "فشل الإرسال"
+                                                "فشل إرسال الرسالة"
                                             )
                                         }
                                     }
@@ -198,7 +196,7 @@ class MainActivity : FlutterActivity() {
                                     handler.post {
                                         result.error(
                                             "SEND_FAILED",
-                                            e.message ?: "فشل إرسال الرسالة",
+                                            e.message ?: "تعذر إرسال الرسالة",
                                             null
                                         )
                                     }
@@ -226,10 +224,10 @@ class MainActivity : FlutterActivity() {
 
                     else -> result.notImplemented()
                 }
-            } catch (e: SecurityException) {
+            } catch (_: SecurityException) {
                 result.error(
                     "PERMISSION",
-                    "يرجى السماح للتطبيق باستخدام البلوتوث",
+                    "يرجى السماح للتطبيق باستخدام البلوتوث من إعدادات الهاتف",
                     null
                 )
             } catch (e: Exception) {
@@ -271,7 +269,7 @@ class MainActivity : FlutterActivity() {
         val bluetooth = adapter
 
         if (bluetooth == null) {
-            result.error("UNSUPPORTED", "لا يوجد بلوتوث", null)
+            result.error("UNSUPPORTED", "هذا الهاتف لا يدعم البلوتوث", null)
             return
         }
 
@@ -308,7 +306,6 @@ class MainActivity : FlutterActivity() {
 
                 while (running.get()) {
                     val client = listeningSocket.accept()
-
                     pool.execute {
                         registerPeer(client)
                     }
@@ -319,6 +316,12 @@ class MainActivity : FlutterActivity() {
                         "serverError",
                         message = "تعذر تشغيل استقبال اتصالات البلوتوث"
                     )
+                }
+
+                handler.post {
+                    if (running.get()) {
+                        running.set(false)
+                    }
                 }
             } finally {
                 running.set(false)
@@ -371,7 +374,7 @@ class MainActivity : FlutterActivity() {
                 handler.post {
                     result.error(
                         "CONNECT_FAILED",
-                        "تعذر الاتصال بالجهاز. تأكد من الاقتران وتشغيل البلوتوث.",
+                        "تعذر الاتصال. تأكد من اقتران الهاتفين وتشغيل البلوتوث.",
                         null
                     )
                 }

@@ -1,115 +1,51 @@
-import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class WaslDevice {
-  final String name;
-  final String address;
+  final String name, address;
   const WaslDevice({required this.name, required this.address});
-
-  factory WaslDevice.fromMap(Map<dynamic, dynamic> map) => WaslDevice(
-    name: map['name']?.toString() ?? 'جهاز',
-    address: map['address']?.toString() ?? '',
-  );
+  factory WaslDevice.fromMap(Map<dynamic, dynamic> m) =>
+      WaslDevice(name: m['name']?.toString() ?? 'جهاز', address: m['address']?.toString() ?? '');
 }
-
 class WaslEvent {
   final String type;
-  final String? address;
-  final String? name;
-  final String? message;
-
+  final String? address, name, message;
   const WaslEvent({required this.type, this.address, this.name, this.message});
-
-  factory WaslEvent.fromMap(Map<dynamic, dynamic> map) => WaslEvent(
-    type: map['type']?.toString() ?? 'unknown',
-    address: map['address']?.toString(),
-    name: map['name']?.toString(),
-    message: map['message']?.toString(),
+  factory WaslEvent.fromMap(Map<dynamic, dynamic> m) => WaslEvent(
+    type: m['type']?.toString() ?? 'unknown',
+    address: m['address']?.toString(), name: m['name']?.toString(), message: m['message']?.toString(),
   );
 }
-
 class BluetoothClassicService {
   BluetoothClassicService._();
   static final instance = BluetoothClassicService._();
-
-  static const MethodChannel _methods =
-      MethodChannel('com.wasl.messenger/bluetooth');
-  static const EventChannel _events =
-      EventChannel('com.wasl.messenger/events');
-
+  static const _methods = MethodChannel('com.plosap.myapp/bluetooth');
+  static const _events = EventChannel('com.plosap.myapp/events');
   Stream<WaslEvent>? _stream;
-  Stream<WaslEvent> get events => _stream ??= _events
-      .receiveBroadcastStream()
-      .map((e) => WaslEvent.fromMap(Map<dynamic, dynamic>.from(e as Map)))
-      .asBroadcastStream();
+  Stream<WaslEvent> get events => _stream ??= _events.receiveBroadcastStream()
+      .map((e) => WaslEvent.fromMap(Map<dynamic, dynamic>.from(e as Map))).asBroadcastStream();
 
-  Future<bool> requestPermissions() async {
-    if (await Permission.bluetoothConnect.request().isGranted == false) {
-      return false;
-    }
-    if (await Permission.bluetoothScan.request().isGranted == false) {
-      return false;
-    }
-    return true;
-  }
-
-  Future<void> _ensurePermission() async {
-    if (!await requestPermissions()) {
-      throw PlatformException(
-        code: 'PERMISSION_DENIED',
-        message: 'امنح صلاحيات البلوتوث من إعدادات التطبيق.',
-      );
+  Future<void> _permissions() async {
+    if (!await Permission.bluetoothConnect.request().isGranted ||
+        !await Permission.bluetoothScan.request().isGranted) {
+      throw PlatformException(code: 'PERMISSION_DENIED', message: 'امنح صلاحيات البلوتوث من إعدادات التطبيق.');
     }
   }
-
-  Future<bool> isSupported() async =>
-      await _methods.invokeMethod<bool>('isSupported') ?? false;
-
-  Future<bool> isEnabled() async {
-    await _ensurePermission();
-    return await _methods.invokeMethod<bool>('isEnabled') ?? false;
-  }
-
-  Future<void> requestEnable() async {
-    await _ensurePermission();
-    await _methods.invokeMethod<bool>('requestEnable');
-  }
-
+  Future<bool> isSupported() async => await _methods.invokeMethod<bool>('isSupported') ?? false;
+  Future<bool> isEnabled() async { await _permissions(); return await _methods.invokeMethod<bool>('isEnabled') ?? false; }
+  Future<void> requestEnable() async { await _permissions(); await _methods.invokeMethod('requestEnable'); }
   Future<List<WaslDevice>> getPairedDevices() async {
-    await _ensurePermission();
+    await _permissions();
     final list = await _methods.invokeMethod<List<dynamic>>('getPairedDevices');
-    return (list ?? []).map((e) =>
-      WaslDevice.fromMap(Map<dynamic, dynamic>.from(e as Map))).toList();
+    return (list ?? []).map((e) => WaslDevice.fromMap(Map<dynamic, dynamic>.from(e as Map))).toList();
   }
-
-  Future<void> startServer() async {
-    await _ensurePermission();
-    await _methods.invokeMethod<bool>('startServer');
+  Future<void> startServer() async { await _permissions(); await _methods.invokeMethod('startServer'); }
+  Future<void> connect(String address) async { await _permissions(); await _methods.invokeMethod('connect', {'address': address}); }
+  Future<void> sendMessage({required String address, required String message}) async {
+    await _permissions();
+    final ok = await _methods.invokeMethod<bool>('sendMessage', {'address': address, 'message': message});
+    if (ok != true) throw PlatformException(code: 'SEND_FAILED', message: 'فشل إرسال الرسالة');
   }
-
-  Future<void> connect(String address) async {
-    await _ensurePermission();
-    await _methods.invokeMethod<bool>('connect', {'address': address});
-  }
-
-  Future<void> sendMessage({
-    required String address,
-    required String message,
-  }) async {
-    await _ensurePermission();
-    final ok = await _methods.invokeMethod<bool>(
-      'sendMessage', {'address': address, 'message': message});
-    if (ok != true) {
-      throw PlatformException(code: 'SEND_FAILED', message: 'فشل إرسال الرسالة');
-    }
-  }
-
-  Future<void> disconnect([String? address]) async {
-    await _methods.invokeMethod<bool>(
-      'disconnect', {if (address != null) 'address': address});
-  }
-
-  Future<void> stopServer() async =>
-      _methods.invokeMethod<bool>('stopServer');
+  Future<void> disconnect([String? address]) async => _methods.invokeMethod('disconnect', {if (address != null) 'address': address});
+  Future<void> stopServer() async => _methods.invokeMethod('stopServer');
 }
